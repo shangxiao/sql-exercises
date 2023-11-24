@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "@sqlite.org/sqlite-wasm": "^3.44.1-build2"
+  }
+}

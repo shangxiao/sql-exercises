@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en" class="no-js">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width" />
+    <title>Leaderboard Demo</title>
+    <style>
+      #container {
+        display: flex;
+        gap: 1em;
+      }
+      textarea {
+        display: block;
+        margin-bottom: 1em;
+      }
+      form {
+        text-align: right;
+      }
+      ol button {
+        width: 100%;
+        margin: 0.5em;
+      }
+      th {
+        border-bottom: 1px solid grey;
+      }
+      td {
+        padding: 0.5em;
+        min-width: 100px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <h1>Leaderboard Demo</h1>
+    <div id="container">
+      <div>
+        <form onSubmit="submitHandler(event)">
+          <textarea name="query" placeholder="Query" cols="80" rows="30" required>select * from recycling</textarea>
+          <button>Run query</button>
+        </form>
+        Options
+        <ol>
+          <li><button type="button" onclick="suggestQuery(event, select)">Select from recycling</button></li>
+          <li><button type="button" onclick="suggestQuery(event, groupBySite)">Group by site</button></li>
+          <!--<li><button type="button" onclick="suggestQuery(event, rollup)">Rollup</button></li>-->
+          <li><button type="button" onclick="suggestQuery(event, rowNumber)">Add a row number</button></li>
+          <li><button type="button" onclick="suggestQuery(event, conditional)">Add conditional</button></li>
+          <li><button type="button" onclick="suggestQuery(event, regroup)">Regroup</button></li>
+        </ol>
+      </div>
+      <div id="results"></div>
+    </div>
+    <template id="template">
+      <table cellspacing="0" cellpadding="0">
+        <thead>
+          <tr></tr>
+        </thead>
+        <tbody>
+          <tr></tr>
+        </tbody>
+      </table>
+    </template>
+  </body>
+
+  <script src="node_modules/@sqlite.org/sqlite-wasm/sqlite-wasm/jswasm/sqlite3.js"></script>
+  <script>
+    const select = `
+select
+  *
+from recycling`;
+
+    const groupBySite = `
+select
+  name,
+  sum(weight) as total
+from recycling
+group by name
+order by total desc`;
+
+    const rollup = `
+select
+  name,
+  sum(weight) as total
+from recycling
+group by rollup (name)
+order by total desc`;
+
+    const rowNumber = `
+select
+  row_number() over () as row_number,
+  *
+from (
+  select
+    name,
+    sum(weight) as total
+  from recycling
+  group by name
+  order by total desc
+)`;
+
+    const conditional = `
+select
+  case
+    when row_number <= 6 then name
+    else 'Other'
+  end as name,
+  total
+from (
+  select
+    row_number() over () as row_number,
+    *
+  from (
+    select
+      name,
+      sum(weight) as total
+    from recycling
+    group by name
+    order by total desc
+  )
+)`;
+
+    const regroup = `
+select
+  name,
+  sum(total) as group_total
+from (
+  select
+    case
+      when row_number <= 6 then name
+      else 'Other'
+    end as name,
+    case
+        when row_number <= 6 then row_number
+        else 7
+    end as row_number,
+    total
+  from (
+    select
+      row_number() over () as row_number,
+      *
+    from (
+      select
+        name,
+        sum(weight) as total
+      from recycling
+      group by name
+      order by total desc
+    )
+  )
+)
+group by name, row_number
+order by row_number
+`;
+
+    let db;
+    window.sqlite3InitModule().then(function (sqlite3) {
+      // The module is now loaded and the sqlite3 namespace
+      // object was passed to this function.
+      console.log("sqlite3:", sqlite3);
+
+      db = new sqlite3.oo1.DB(":memory:", "ct");
+      db.exec(`create table recycling (
+              name varchar,
+              weight integer
+            );
+
+            insert into recycling values
+            ('Site 9', 42),
+            ('Site 2', 33),
+            ('Site 7', 72),
+            ('Site 3', 64),
+            ('Site 4', 74),
+            ('Site 9', 63),
+            ('Site 3', 60),
+            ('Site 5', 8),
+            ('Site 3', 57),
+            ('Site 10', 54),
+            ('Site 6', 11),
+            ('Site 2', 36),
+            ('Site 3', 76),
+            ('Site 8', 62),
+            ('Site 1', 61),
+            ('Site 10', 8),
+            ('Site 8', 56),
+            ('Site 5', 44),
+            ('Site 1', 94),
+            ('Site 9', 94)
+            ;`);
+    });
+
+    function submitHandler(e) {
+      e.preventDefault();
+      runQuery(e.target.query.value.trim());
+    }
+
+    function runQuery(query) {
+      const resultRows = [];
+      const columnNames = [];
+      try {
+        db.exec(query, {
+          rowMode: "array",
+          columnNames,
+          resultRows,
+        });
+      } catch (e) {
+        alert(e);
+      }
+      console.log(columnNames);
+      console.log(resultRows);
+
+      const results = document.getElementById("results");
+      results.innerHTML = "";
+      const template = document.getElementById("template");
+      const container = template.content.cloneNode(true);
+      const theadRow = container.querySelector("thead > tr");
+      const tbody = container.querySelector("tbody");
+
+      columnNames.forEach((col) => {
+        const th = document.createElement("th");
+        th.innerHTML = col;
+        theadRow.appendChild(th);
+      });
+      resultRows.forEach((row) => {
+        const tr = document.createElement("tr");
+        row.forEach((col) => {
+          const td = document.createElement("td");
+          td.innerHTML = col;
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      });
+
+      results.appendChild(container);
+    }
+
+    function suggestQuery(event, query) {
+      event.preventDefault();
+      document.querySelector("textarea").value = query.trim();
+      runQuery(query.trim());
+    }
+  </script>
+</html>
